@@ -156,9 +156,19 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
         !expandedSignals[groupName]
       ) {
         // Draw grouped signal
+        const groupedSignal: Signal = {
+          name: groupName,
+          width: signals[0].width * signals.length,
+          wave: signals[0].wave.map(([time, _]) => [
+            time,
+            signals
+              .map((s) => s.wave.find((w) => w[0] === time)?.[1] || "0")
+              .join(""),
+          ]),
+        };
         drawSignal(
           ctx,
-          signals[0],
+          groupedSignal,
           yOffset,
           width,
           height,
@@ -295,33 +305,23 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
 
       if (x >= sidebarWidth - 1 && x <= maxEndX) {
         if (value === "x" || value === "z") {
-          if (lastValue !== "x" && lastValue !== "z" && lastValue !== null) {
-            drawWaveLine(lastX, x, lastY, lastY, "#00ffff");
-            drawWaveLine(x, x, lastY, y, "#00ffff");
-          }
           drawHollowBox(x, nextX, y, true);
         } else {
-          const binaryValue = parseInt(value, 2);
-          y =
-            effectiveYOffset +
-            (binaryValue === 0
-              ? (3 * effectiveSignalHeight) / 4
-              : effectiveSignalHeight / 4);
+          if (!isGrouped && signal.width === 1) {
+            const binaryValue = parseInt(value, 2);
+            y =
+              effectiveYOffset +
+              (binaryValue === 0
+                ? (3 * effectiveSignalHeight) / 4
+                : effectiveSignalHeight / 4);
 
-          if (lastValue === "x" || lastValue === "z") {
-            drawWaveLine(
-              x,
-              x,
-              effectiveYOffset + effectiveSignalHeight / 4,
-              effectiveYOffset + (3 * effectiveSignalHeight) / 4,
-              "#00ffff",
-            );
-          } else if (lastValue !== null && lastValue !== value) {
-            drawWaveLine(lastX, x, lastY, lastY, "#00ffff");
-            drawWaveLine(x, x, lastY, y, "#00ffff");
-          }
-
-          if (signal.width > 1) {
+            if (lastValue !== null && lastValue !== value) {
+              drawWaveLine(lastX, x, lastY, lastY, "#00ffff");
+              drawWaveLine(x, x, lastY, y, "#00ffff");
+            }
+            drawWaveLine(x, nextX, y, y, "#00ffff");
+          } else {
+            // For grouped signals or multi-bit signals, draw hexagon
             drawHexagon(
               ctx,
               x,
@@ -332,9 +332,10 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
             );
             ctx.fillStyle = "white";
             ctx.font = "12px Arial";
-            ctx.fillText(value, x + 5, y + 5);
-          } else {
-            drawWaveLine(x, nextX, y, y, "#00ffff");
+            const displayValue = isGrouped
+              ? value
+              : value.padStart(signal.width, "0");
+            ctx.fillText(displayValue, x + 5, y + 5);
           }
         }
 
