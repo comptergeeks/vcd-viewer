@@ -45,8 +45,8 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
     LEDR: false,
   });
 
-  const signalHeight = 30;
-  const signalPadding = 5; // Vertical padding between signals
+  const signalHeight = 50;
+  const signalPadding = 10; // Vertical padding between signals
   const sidebarWidth = 250;
   const timeScaleHeight = 30;
 
@@ -305,6 +305,9 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
 
       if (x >= sidebarWidth - 1 && x <= maxEndX) {
         if (value === "x" || value === "z") {
+          if (lastValue !== "x" && lastValue !== "z" && lastValue !== null) {
+            drawWaveLine(lastX, x, lastY, y, "#00ffff");
+          }
           drawHollowBox(x, nextX, y, true);
         } else {
           if (!isGrouped && signal.width === 1) {
@@ -315,9 +318,19 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
                 ? (3 * effectiveSignalHeight) / 4
                 : effectiveSignalHeight / 4);
 
-            if (lastValue !== null && lastValue !== value) {
-              drawWaveLine(lastX, x, lastY, lastY, "#00ffff");
-              drawWaveLine(x, x, lastY, y, "#00ffff");
+            if (lastValue !== null) {
+              if (lastValue === "x" || lastValue === "z") {
+                drawWaveLine(
+                  x,
+                  x,
+                  effectiveYOffset + effectiveSignalHeight / 4,
+                  effectiveYOffset + (3 * effectiveSignalHeight) / 4,
+                  "#00ffff",
+                );
+              } else if (lastValue !== value) {
+                drawWaveLine(lastX, x, lastY, lastY, "#00ffff");
+                drawWaveLine(x, x, lastY, y, "#00ffff");
+              }
             }
             drawWaveLine(x, nextX, y, y, "#00ffff");
           } else {
