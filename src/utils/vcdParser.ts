@@ -1,3 +1,5 @@
+// utils/vcdParser.ts
+
 interface Signal {
   name: string;
   width: number;
@@ -74,30 +76,6 @@ export const parseVCD = async (vcdContent: string): Promise<VCDData> => {
         setTimeout(() => processChunk(end), 0);
       } else {
         const maxCycles = Math.ceil(maxTime / Math.pow(10, -timescale));
-
-        // Post-processing to handle multi-bit signals
-        Object.values(signals).forEach((signal) => {
-          if (signal.width > 1 && signal.name.includes("[")) {
-            const baseName = signal.name.split("[")[0];
-            const range = signal.name.match(/\[(.+)\]/)?.[1];
-            if (range) {
-              const [high, low] = range.split(":").map(Number);
-              for (let i = low; i <= high; i++) {
-                const bitSignal: Signal = {
-                  name: `${baseName}[${i}]`,
-                  width: 1,
-                  wave: signal.wave.map(([time, value]) => [
-                    time,
-                    value[high - i],
-                  ]),
-                  hierarchy: signal.hierarchy,
-                };
-                signals[`${baseName}[${i}]`] = bitSignal;
-              }
-            }
-          }
-        });
-
         resolve({
           signals: Object.values(signals),
           timescale: Math.pow(10, -timescale),

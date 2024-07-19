@@ -1,13 +1,18 @@
 import React, { useRef, useEffect, useState, useMemo } from "react";
 import {
   Box,
-  Slider,
   Typography,
   Switch,
   FormControlLabel,
   Select,
   MenuItem,
+  IconButton,
+  useTheme,
 } from "@mui/material";
+import { styled } from "@mui/system";
+import { SelectChangeEvent } from "@mui/material/Select";
+import ZoomInIcon from "@mui/icons-material/ZoomIn";
+import ZoomOutIcon from "@mui/icons-material/ZoomOut";
 
 interface Signal {
   name: string;
@@ -26,7 +31,22 @@ interface WaveformViewerProps {
   data: VCDData;
 }
 
+const StyledBox = styled(Box)(({ theme }) => ({
+  backgroundColor: theme.palette.mode === "dark" ? "#121212" : "#f5f5f7",
+  color: theme.palette.mode === "dark" ? "#ffffff" : "#1d1d1f",
+  fontFamily:
+    "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif",
+}));
+
+const StyledCanvas = styled("canvas")({
+  display: "block",
+  width: "100%",
+  height: "100%",
+  transition: "all 0.3s ease",
+});
+
 const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
+  const theme = useTheme();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
@@ -38,6 +58,7 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
     value: string;
     y: number;
   } | null>(null);
+
   const [expandedSignals, setExpandedSignals] = useState<
     Record<string, boolean>
   >({
@@ -45,12 +66,11 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
     LEDR: false,
   });
 
-  const signalHeight = 50;
-  const signalPadding = 10; // Vertical padding between signals
-  const sidebarWidth = 250;
+  const signalHeight = 40;
+  const signalPadding = 8;
+  const sidebarWidth = 200;
   const timeScaleHeight = 30;
 
-  // Update the groupedSignals logic to separate SW[0] and SW[1]
   const groupedSignals = useMemo(() => {
     const groups: Record<string, Signal[]> = {};
     data.signals.forEach((signal) => {
@@ -105,9 +125,19 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
     const { width, height } = canvas;
     ctx.clearRect(0, 0, width, height);
 
-    // Draw background
-    ctx.fillStyle = "#1e1e1e";
+    // Use theme colors
+    const backgroundColor =
+      theme.palette.mode === "dark" ? "#121212" : "#ffffff";
+    const textColor = theme.palette.mode === "dark" ? "#ffffff" : "#000000";
+    const signalColor = theme.palette.mode === "dark" ? "#00ffff" : "#007aff";
+    const errorColor = theme.palette.error.main;
+
+    ctx.fillStyle = backgroundColor;
     ctx.fillRect(0, 0, width, height);
+
+    // Draw time scale
+    ctx.fillStyle = textColor;
+    ctx.font = "12px Arial";
 
     // Calculate scales
     const xScale = ((width - sidebarWidth) * zoom) / timeRange;
@@ -116,8 +146,9 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
     const visibleEndTime = visibleStartTime + visibleTimeRange;
 
     // Draw time scale
-    ctx.fillStyle = "#ffd700";
-    ctx.font = "12px Arial";
+    ctx.fillStyle = signalColor;
+    ctx.font =
+      "12px -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif";
 
     const timeStep = Math.pow(10, Math.floor(Math.log10(visibleTimeRange / 5)));
     const startTime = Math.floor(visibleStartTime / timeStep) * timeStep;
@@ -132,7 +163,7 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
         ctx.fillText(`${t} ps`, x, timeScaleHeight - 5);
 
         // Draw vertical grid line
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
+        ctx.strokeStyle = theme.palette.mode === "dark" ? "#333333" : "#e5e5e5";
         ctx.beginPath();
         ctx.moveTo(x, timeScaleHeight);
         ctx.lineTo(x, height);
@@ -141,7 +172,7 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
     }
 
     // Draw cycle count
-    ctx.fillStyle = "white";
+    ctx.fillStyle = textColor;
     ctx.fillText(
       `Cycle: ${Math.floor(visibleStartTime / data.timescale)}/${data.maxCycles}`,
       sidebarWidth + 10,
@@ -202,7 +233,7 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
     if (cursorPosition !== null) {
       const cursorX =
         (cursorPosition - visibleStartTime) * xScale + sidebarWidth;
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+      ctx.strokeStyle = "rgba(0, 122, 255, 0.5)";
       ctx.setLineDash([5, 5]);
       ctx.beginPath();
       ctx.moveTo(cursorX, timeScaleHeight);
@@ -212,9 +243,9 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
 
       // Draw hover info
       if (showHoverInfo && hoverInfo) {
-        ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+        ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
         ctx.fillRect(cursorX + 5, hoverInfo.y - 20, 100, 40);
-        ctx.fillStyle = "white";
+        ctx.fillStyle = textColor;
         ctx.fillText(
           `${hoverInfo.name}: ${hoverInfo.value}`,
           cursorX + 10,
@@ -256,10 +287,9 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
       endX: number,
       startY: number,
       endY: number,
-      color: string,
     ) => {
       ctx.beginPath();
-      ctx.strokeStyle = color;
+      ctx.strokeStyle = theme.palette.mode === "dark" ? "#00ffff" : "#007aff";
       ctx.moveTo(startX, startY);
       ctx.lineTo(endX, endY);
       ctx.stroke();
@@ -273,11 +303,15 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
     ) => {
       const boxHeight = effectiveSignalHeight - 10;
       ctx.beginPath();
-      ctx.strokeStyle = isError ? "red" : "#00ffff";
+      ctx.strokeStyle = isError
+        ? theme.palette.error.main
+        : theme.palette.mode === "dark"
+          ? "#00ffff"
+          : "#007aff";
       ctx.rect(startX, y - boxHeight / 2, endX - startX, boxHeight);
       ctx.stroke();
       if (isError) {
-        ctx.fillStyle = "red";
+        ctx.fillStyle = theme.palette.error.main;
         ctx.font = "12px Arial";
         ctx.fillText("x", (startX + endX) / 2 - 3, y + 4);
       }
@@ -306,7 +340,7 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
       if (x >= sidebarWidth - 1 && x <= maxEndX) {
         if (value === "x" || value === "z") {
           if (lastValue !== "x" && lastValue !== "z" && lastValue !== null) {
-            drawWaveLine(lastX, x, lastY, y, "#00ffff");
+            drawWaveLine(lastX, x, lastY, y);
           }
           drawHollowBox(x, nextX, y, true);
         } else {
@@ -325,14 +359,13 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
                   x,
                   effectiveYOffset + effectiveSignalHeight / 4,
                   effectiveYOffset + (3 * effectiveSignalHeight) / 4,
-                  "#00ffff",
                 );
               } else if (lastValue !== value) {
-                drawWaveLine(lastX, x, lastY, lastY, "#00ffff");
-                drawWaveLine(x, x, lastY, y, "#00ffff");
+                drawWaveLine(lastX, x, lastY, lastY);
+                drawWaveLine(x, x, lastY, y);
               }
             }
-            drawWaveLine(x, nextX, y, y, "#00ffff");
+            drawWaveLine(x, nextX, y, y);
           } else {
             // For grouped signals or multi-bit signals, draw hexagon
             drawHexagon(
@@ -343,8 +376,9 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
               effectiveSignalHeight - 10,
               false,
             );
-            ctx.fillStyle = "white";
-            ctx.font = "12px Arial";
+            ctx.fillStyle = theme.palette.text.primary;
+            ctx.font =
+              "12px -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif";
             const displayValue = isGrouped
               ? value
               : value.padStart(signal.width, "0");
@@ -359,8 +393,9 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
     });
 
     // Draw signal name
-    ctx.fillStyle = "white";
-    ctx.font = "12px Arial";
+    ctx.fillStyle = theme.palette.text.primary;
+    ctx.font =
+      "12px -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif";
     let signalName = signal.name;
     if (
       (signalName.startsWith("SW") || signalName.startsWith("LEDR")) &&
@@ -392,9 +427,14 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
     ctx.lineTo(x + width - sideLength / 2, y + height / 2);
     ctx.lineTo(x + sideLength / 2, y + height / 2);
     ctx.closePath();
-    ctx.strokeStyle = isError ? "red" : "#00ffff";
+    ctx.strokeStyle = isError
+      ? theme.palette.error.main
+      : theme.palette.mode === "dark"
+        ? "#00ffff"
+        : "#007aff";
     ctx.stroke();
   };
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -421,10 +461,15 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
     showHoverInfo,
     hoverInfo,
     expandedSignals,
+    theme.palette.mode,
   ]);
 
-  const handleZoom = (_event: Event, newValue: number | number[]) => {
-    setZoom(Array.isArray(newValue) ? newValue[0] : newValue);
+  const handleZoomIn = () => {
+    setZoom((prevZoom) => Math.min(prevZoom * 1.2, 10));
+  };
+
+  const handleZoomOut = () => {
+    setZoom((prevZoom) => Math.max(prevZoom / 1.2, 0.1));
   };
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -478,16 +523,17 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
     return Object.entries(groupedSignals).map(([groupName, signals]) => {
       if (signals.length > 1 && (groupName === "SW" || groupName === "LEDR")) {
         return (
-          <Box key={groupName} sx={{ height: signalHeight, paddingLeft: 10 }}>
+          <Box key={groupName} sx={{ height: signalHeight, paddingLeft: 2 }}>
             <Select
               value={expandedSignals[groupName] ? "expanded" : "collapsed"}
-              onChange={(e) =>
+              onChange={(e: SelectChangeEvent) =>
                 setExpandedSignals({
                   ...expandedSignals,
                   [groupName]: e.target.value === "expanded",
                 })
               }
               size="small"
+              sx={{ fontSize: 14 }}
             >
               <MenuItem value="collapsed">
                 {groupName} [{signals.length - 1}:0]
@@ -499,18 +545,20 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
       } else {
         const signal = signals[0];
         return (
-          <div
+          <Typography
             key={signal.name}
-            style={{
+            sx={{
               height: signalHeight,
-              paddingLeft: 10,
+              paddingLeft: 2,
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
+              fontSize: 14,
+              lineHeight: `${signalHeight}px`,
             }}
           >
             {signal.name}
-          </div>
+          </Typography>
         );
       }
     });
@@ -521,39 +569,32 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
   }
 
   return (
-    <Box
-      sx={{
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        backgroundColor: "#1e1e1e",
-        color: "white",
-      }}
+    <StyledBox
+      sx={{ height: "100%", display: "flex", flexDirection: "column" }}
     >
       <Box
         sx={{
           padding: 2,
           display: "flex",
-          justifyContent: "space-between",
           alignItems: "center",
+          borderBottom: 1,
+          borderColor: "divider",
         }}
       >
-        <Box sx={{ flexGrow: 1, marginRight: 2 }}>
-          <Typography gutterBottom>Zoom</Typography>
-          <Slider
-            value={zoom}
-            onChange={handleZoom}
-            min={0.1}
-            max={10}
-            step={0.1}
-            aria-labelledby="zoom-slider"
-          />
-        </Box>
+        <Typography variant="h6" sx={{ flexGrow: 1, fontWeight: 600 }}>
+          Waveform Viewer
+        </Typography>
+        <IconButton onClick={handleZoomOut} aria-label="Zoom out">
+          <ZoomOutIcon />
+        </IconButton>
+        <IconButton onClick={handleZoomIn} aria-label="Zoom in">
+          <ZoomInIcon />
+        </IconButton>
         <FormControlLabel
           control={
             <Switch checked={showHoverInfo} onChange={toggleHoverInfo} />
           }
-          label="Show Hover Info"
+          label="Show Details"
         />
       </Box>
       <Box sx={{ flexGrow: 1, display: "flex", overflow: "hidden" }}>
@@ -562,10 +603,9 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
           sx={{
             width: sidebarWidth,
             overflowY: "auto",
-            borderRight: "1px solid #333",
-            "& > div:nth-of-type(even)": {
-              backgroundColor: "rgba(255, 255, 255, 0.05)",
-            },
+            borderRight: 1,
+            borderColor: "divider",
+            bgcolor: "background.paper",
           }}
         >
           {renderSignalNames()}
@@ -574,22 +614,19 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
           sx={{
             flexGrow: 1,
             overflow: "auto",
+            WebkitOverflowScrolling: "touch",
           }}
           onScroll={handleScroll}
         >
-          <canvas
+          <StyledCanvas
             ref={canvasRef}
-            style={{
-              display: "block",
-              width: "100%",
-              height: "100%",
-            }}
             onMouseMove={handleMouseMove}
             onMouseLeave={handleMouseLeave}
           />
         </Box>
       </Box>
-    </Box>
+    </StyledBox>
   );
 };
+
 export default WaveformViewer;
