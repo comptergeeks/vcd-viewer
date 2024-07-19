@@ -46,6 +46,7 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
   });
 
   const signalHeight = 30;
+  const signalPadding = 5; // Vertical padding between signals
   const sidebarWidth = 250;
   const timeScaleHeight = 30;
 
@@ -212,6 +213,7 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
       }
     }
   };
+
   const drawSignal = (
     ctx: CanvasRenderingContext2D,
     signal: Signal,
@@ -224,61 +226,115 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
     isGrouped: boolean = false,
     indexInGroup: number = 0,
   ) => {
-    if (yOffset + signalHeight < timeScaleHeight || yOffset > height) return;
+    const effectiveYOffset = yOffset + signalPadding / 2;
+    const effectiveSignalHeight = signalHeight - signalPadding;
 
-    ctx.beginPath();
-    ctx.strokeStyle = "#00ffff";
+    if (
+      effectiveYOffset + effectiveSignalHeight < timeScaleHeight ||
+      effectiveYOffset > height
+    )
+      return;
+
     ctx.lineWidth = 2;
 
     let lastX = sidebarWidth;
-    let lastY = yOffset + signalHeight / 2;
+    let lastY = effectiveYOffset + effectiveSignalHeight / 2;
     let lastValue: string | null = null;
 
-    signal.wave.forEach(([time, value], index) => {
-      const x = (time - visibleStartTime) * xScale + sidebarWidth;
-      let y: number;
+    const drawWaveLine = (
+      startX: number,
+      endX: number,
+      startY: number,
+      endY: number,
+      color: string,
+    ) => {
+      ctx.beginPath();
+      ctx.strokeStyle = color;
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+    };
 
-      if (value === "x" || value === "z") {
-        ctx.strokeStyle = "red";
-        y = yOffset + signalHeight / 2;
-      } else {
-        ctx.strokeStyle = "#00ffff";
-        const binaryValue = parseInt(value, 2);
-        y =
-          yOffset +
-          (binaryValue === 0 ? (3 * signalHeight) / 4 : signalHeight / 4);
+    const drawHollowBox = (
+      startX: number,
+      endX: number,
+      y: number,
+      isError: boolean,
+    ) => {
+      const boxHeight = effectiveSignalHeight - 10;
+      ctx.beginPath();
+      ctx.strokeStyle = isError ? "red" : "#00ffff";
+      ctx.rect(startX, y - boxHeight / 2, endX - startX, boxHeight);
+      ctx.stroke();
+      if (isError) {
+        ctx.fillStyle = "red";
+        ctx.font = "12px Arial";
+        ctx.fillText("x", (startX + endX) / 2 - 3, y + 4);
       }
+    };
 
-      if (x >= sidebarWidth - 1 && x <= width) {
-        if (lastValue !== null && lastValue !== value) {
-          ctx.moveTo(lastX, lastY);
-          ctx.lineTo(x, lastY);
-          ctx.lineTo(x, y);
+    const maxEndX = Math.min(
+      (visibleEndTime - visibleStartTime) * xScale + sidebarWidth,
+      width,
+    );
+
+    signal.wave.forEach(([time, value], index) => {
+      const x = Math.min(
+        (time - visibleStartTime) * xScale + sidebarWidth,
+        maxEndX,
+      );
+      let y = effectiveYOffset + effectiveSignalHeight / 2;
+
+      const nextTime = signal.wave[index + 1]
+        ? signal.wave[index + 1][0]
+        : visibleEndTime;
+      const nextX = Math.min(
+        (nextTime - visibleStartTime) * xScale + sidebarWidth,
+        maxEndX,
+      );
+
+      if (x >= sidebarWidth - 1 && x <= maxEndX) {
+        if (value === "x" || value === "z") {
+          if (lastValue !== "x" && lastValue !== "z" && lastValue !== null) {
+            drawWaveLine(lastX, x, lastY, lastY, "#00ffff");
+            drawWaveLine(x, x, lastY, y, "#00ffff");
+          }
+          drawHollowBox(x, nextX, y, true);
         } else {
-          ctx.moveTo(lastX, y);
-          ctx.lineTo(x, y);
-        }
+          const binaryValue = parseInt(value, 2);
+          y =
+            effectiveYOffset +
+            (binaryValue === 0
+              ? (3 * effectiveSignalHeight) / 4
+              : effectiveSignalHeight / 4);
 
-        if (signal.width > 1 || value === "x" || value === "z") {
-          // Draw hexagon for multi-bit signals or x/z values
-          const nextTime = signal.wave[index + 1]
-            ? signal.wave[index + 1][0]
-            : visibleEndTime;
-          const hexWidth = (nextTime - time) * xScale;
-          const hexHeight = signalHeight - 10;
-          drawHexagon(
-            ctx,
-            x,
-            yOffset + signalHeight / 2,
-            hexWidth,
-            hexHeight,
-            value === "x" || value === "z",
-          );
+          if (lastValue === "x" || lastValue === "z") {
+            drawWaveLine(
+              x,
+              x,
+              effectiveYOffset + effectiveSignalHeight / 4,
+              effectiveYOffset + (3 * effectiveSignalHeight) / 4,
+              "#00ffff",
+            );
+          } else if (lastValue !== null && lastValue !== value) {
+            drawWaveLine(lastX, x, lastY, lastY, "#00ffff");
+            drawWaveLine(x, x, lastY, y, "#00ffff");
+          }
 
-          // Draw value inside hexagon
-          if (value !== "x" && value !== "z") {
+          if (signal.width > 1) {
+            drawHexagon(
+              ctx,
+              x,
+              y,
+              nextX - x,
+              effectiveSignalHeight - 10,
+              false,
+            );
             ctx.fillStyle = "white";
-            ctx.fillText(value, x + 5, yOffset + signalHeight / 2 + 5);
+            ctx.font = "12px Arial";
+            ctx.fillText(value, x + 5, y + 5);
+          } else {
+            drawWaveLine(x, nextX, y, y, "#00ffff");
           }
         }
 
@@ -287,8 +343,6 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
         lastValue = value;
       }
     });
-
-    ctx.stroke();
 
     // Draw signal name
     ctx.fillStyle = "white";
@@ -300,7 +354,11 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
     ) {
       signalName += `[${indexInGroup}]`;
     }
-    ctx.fillText(signalName, 5, yOffset + signalHeight / 2 + 5);
+    ctx.fillText(
+      signalName,
+      5,
+      effectiveYOffset + effectiveSignalHeight / 2 + 5,
+    );
   };
 
   const drawHexagon = (
@@ -320,15 +378,9 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
     ctx.lineTo(x + width - sideLength / 2, y + height / 2);
     ctx.lineTo(x + sideLength / 2, y + height / 2);
     ctx.closePath();
-    if (isError) {
-      ctx.strokeStyle = "red";
-      ctx.stroke();
-    } else {
-      ctx.strokeStyle = "#00ffff";
-      ctx.stroke();
-    }
+    ctx.strokeStyle = isError ? "red" : "#00ffff";
+    ctx.stroke();
   };
-
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
