@@ -46,6 +46,33 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
   const sidebarWidth = 250;
   const timeScaleHeight = 30;
 
+  // Update the groupedSignals logic to separate SW[0] and SW[1]
+  const groupedSignals = useMemo(() => {
+    const groups: Record<string, Signal[]> = {};
+    data.signals.forEach((signal) => {
+      if (signal.name === "SW") {
+        // Split SW into individual bits
+        for (let i = 0; i < signal.width; i++) {
+          const bitSignal: Signal = {
+            name: `SW[${i}]`,
+            width: 1,
+            wave: signal.wave.map(([time, value]) => [
+              time,
+              value[signal.width - 1 - i],
+            ]),
+          };
+          groups[`SW[${i}]`] = [bitSignal];
+        }
+      } else {
+        const baseName = signal.name.split("[")[0];
+        if (!groups[baseName]) {
+          groups[baseName] = [];
+        }
+        groups[baseName].push(signal);
+      }
+    });
+    return groups;
+  }, [data.signals]);
   const { maxTime, minTime } = useMemo(() => {
     let max = -Infinity;
     let min = Infinity;
@@ -117,75 +144,39 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
     );
 
     // Draw signals
-    data.signals.forEach((signal, index) => {
-      if (
-        signal.name.startsWith("SW[") &&
-        !expandedSignals["SW"] &&
-        signal.name !== "SW[0]"
-      ) {
-        return;
-      }
-
-      const yOffset = index * signalHeight + timeScaleHeight - offset.y;
-
-      if (yOffset + signalHeight < timeScaleHeight || yOffset > height) return;
-
-      // Draw waveform
-      ctx.beginPath();
-      ctx.strokeStyle = "#00ffff";
-      ctx.lineWidth = 2;
-
-      let lastX = sidebarWidth;
-      let lastY = yOffset + signalHeight / 2;
-      let lastValue: string | null = null;
-
-      signal.wave.forEach(([time, value]) => {
-        const x = (time - visibleStartTime) * xScale + sidebarWidth;
-        let y: number;
-
-        if (signal.name === "LEDR") {
-          // For LEDR, interpret the value as binary and draw accordingly
-          const binaryValue = parseInt(value, 2);
-          y =
-            yOffset +
-            (binaryValue === 0 ? (3 * signalHeight) / 4 : signalHeight / 4);
-        } else {
-          y =
-            yOffset +
-            (value === "1" ? signalHeight / 4 : (3 * signalHeight) / 4);
-        }
-
-        if (x >= sidebarWidth - 1 && x <= width) {
-          if (lastValue !== null && lastValue !== value) {
-            ctx.moveTo(lastX, lastY);
-            ctx.lineTo(x, lastY);
-            ctx.lineTo(x, y);
-          } else {
-            ctx.moveTo(lastX, y);
-            ctx.lineTo(x, y);
-          }
-          lastX = x;
-          lastY = y;
-          lastValue = value;
-        }
-      });
-
-      // Extend the last value to the end of the canvas
-      if (lastValue !== null) {
-        ctx.lineTo(width, lastY);
-      }
-
-      ctx.stroke();
-
-      // Draw signal values
-      if (signal.name === "LEDR") {
-        ctx.fillStyle = "white";
-        ctx.font = "12px Arial";
-        signal.wave.forEach(([time, value]) => {
-          const x = (time - visibleStartTime) * xScale + sidebarWidth;
-          if (x >= sidebarWidth && x <= width) {
-            ctx.fillText(value, x + 5, yOffset + signalHeight / 2);
-          }
+    let yOffset = timeScaleHeight - offset.y;
+    Object.entries(groupedSignals).forEach(([groupName, signals]) => {
+      if (!expandedSignals[groupName] && signals.length > 1) {
+        // Draw grouped signal
+        const signal = signals[0];
+        drawSignal(
+          ctx,
+          signal,
+          yOffset,
+          width,
+          height,
+          xScale,
+          visibleStartTime,
+          visibleEndTime,
+          true,
+        );
+        yOffset += signalHeight;
+      } else {
+        // Draw individual signals
+        signals.forEach((signal, index) => {
+          drawSignal(
+            ctx,
+            signal,
+            yOffset,
+            width,
+            height,
+            xScale,
+            visibleStartTime,
+            visibleEndTime,
+            false,
+            index,
+          );
+          yOffset += signalHeight;
         });
       }
     });
@@ -214,6 +205,106 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
         );
       }
     }
+  };
+  const drawSignal = (
+    ctx: CanvasRenderingContext2D,
+    signal: Signal,
+    yOffset: number,
+    width: number,
+    height: number,
+    xScale: number,
+    visibleStartTime: number,
+    visibleEndTime: number,
+    isGrouped: boolean = false,
+    indexInGroup: number = 0,
+  ) => {
+    if (yOffset + signalHeight < timeScaleHeight || yOffset > height) return;
+
+    ctx.beginPath();
+    ctx.strokeStyle = "#00ffff";
+    ctx.lineWidth = 2;
+
+    let lastX = sidebarWidth;
+    let lastY = yOffset + signalHeight / 2;
+    let lastValue: string | null = null;
+
+    signal.wave.forEach(([time, value]) => {
+      const x = (time - visibleStartTime) * xScale + sidebarWidth;
+      let y: number;
+
+      if (value === "x" || value === "z") {
+        ctx.strokeStyle = "red";
+        y = yOffset + signalHeight / 2;
+      } else {
+        ctx.strokeStyle = "#00ffff";
+        const binaryValue = parseInt(value, 2);
+        y =
+          yOffset +
+          (binaryValue === 0 ? (3 * signalHeight) / 4 : signalHeight / 4);
+      }
+
+      if (x >= sidebarWidth - 1 && x <= width) {
+        if (lastValue !== null && lastValue !== value) {
+          ctx.moveTo(lastX, lastY);
+          ctx.lineTo(x, lastY);
+          ctx.lineTo(x, y);
+        } else {
+          ctx.moveTo(lastX, y);
+          ctx.lineTo(x, y);
+        }
+
+        if (signal.width > 1 && value !== "x" && value !== "z") {
+          // Draw hexagon for multi-bit signals
+          const hexHeight = signalHeight - 10;
+          const hexWidth = ctx.measureText(value).width + 20;
+          drawHexagon(ctx, x, yOffset + signalHeight / 2, hexWidth, hexHeight);
+
+          // Draw value inside hexagon
+          ctx.fillStyle = "white";
+          ctx.fillText(
+            value,
+            x - hexWidth / 2 + 10,
+            yOffset + signalHeight / 2 + 5,
+          );
+        }
+
+        lastX = x;
+        lastY = y;
+        lastValue = value;
+      }
+    });
+
+    ctx.stroke();
+
+    // Draw signal name
+    ctx.fillStyle = "white";
+    ctx.font = "12px Arial";
+    let signalName = signal.name;
+    if (signalName.startsWith("SW") && !isGrouped) {
+      signalName += `[${indexInGroup}]`;
+    } else if (signalName === "LEDR") {
+      signalName += `[${signal.width - 1}:0]`;
+    }
+    ctx.fillText(signalName, 5, yOffset + signalHeight / 2 + 5);
+  };
+
+  const drawHexagon = (
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+  ) => {
+    const sideLength = height / 2;
+    ctx.beginPath();
+    ctx.moveTo(x - width / 2, y);
+    ctx.lineTo(x - width / 2 + sideLength / 2, y - height / 2);
+    ctx.lineTo(x + width / 2 - sideLength / 2, y - height / 2);
+    ctx.lineTo(x + width / 2, y);
+    ctx.lineTo(x + width / 2 - sideLength / 2, y + height / 2);
+    ctx.lineTo(x - width / 2 + sideLength / 2, y + height / 2);
+    ctx.closePath();
+    ctx.stroke();
   };
 
   useEffect(() => {
@@ -296,39 +387,37 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
   };
 
   const renderSignalNames = () => {
-    return data.signals
-      .map((signal, index) => {
-        if (signal.name.startsWith("SW[")) {
-          // Group SW signals
-          if (signal.name === "SW[0]") {
-            return (
-              <Box
-                key={signal.name}
-                sx={{
-                  height: signalHeight,
-                  paddingLeft: (signal.hierarchy?.length || 0) * 10,
-                }}
-              >
-                <Select
-                  value={expandedSignals["SW"] ? "expanded" : "collapsed"}
-                  onChange={(e) =>
-                    setExpandedSignals({
-                      ...expandedSignals,
-                      SW: e.target.value === "expanded",
-                    })
-                  }
-                  size="small"
-                >
-                  <MenuItem value="collapsed">SW [1:0]</MenuItem>
-                  <MenuItem value="expanded">SW (Expanded)</MenuItem>
-                </Select>
-              </Box>
-            );
-          } else if (!expandedSignals["SW"]) {
-            return null;
-          }
-        }
-
+    return Object.entries(groupedSignals).map(([groupName, signals]) => {
+      if (signals.length > 1) {
+        const width = signals[0].width;
+        return (
+          <Box
+            key={groupName}
+            sx={{
+              height: signalHeight,
+              paddingLeft: (signals[0].hierarchy?.length || 0) * 10,
+            }}
+          >
+            <Select
+              value={expandedSignals[groupName] ? "expanded" : "collapsed"}
+              onChange={(e) =>
+                setExpandedSignals({
+                  ...expandedSignals,
+                  [groupName]: e.target.value === "expanded",
+                })
+              }
+              size="small"
+            >
+              <MenuItem value="collapsed">
+                {groupName} [
+                {width > 1 ? `${width - 1}:0` : `${signals.length - 1}:0`}]
+              </MenuItem>
+              <MenuItem value="expanded">{groupName} (Expanded)</MenuItem>
+            </Select>
+          </Box>
+        );
+      } else {
+        const signal = signals[0];
         return (
           <div
             key={signal.name}
@@ -340,11 +429,11 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
               textOverflow: "ellipsis",
             }}
           >
-            {signal.name} [{signal.width - 1}:0]
+            {signal.name}
           </div>
         );
-      })
-      .filter(Boolean);
+      }
+    });
   };
 
   if (!data || !data.signals || data.signals.length === 0) {
@@ -423,5 +512,4 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
     </Box>
   );
 };
-
 export default WaveformViewer;
