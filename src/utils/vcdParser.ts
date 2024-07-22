@@ -32,7 +32,6 @@ export const parseVCD = async (vcdContent: string): Promise<VCDData> => {
     let timescale = 0;
     let maxTime = 0;
     let currentScope: string[] = [];
-    let resetDeassertion = 0;
     let idMap: { [key: string]: string } = {}; // Map VCD IDs to signal names
 
     const processChunk = (start: number) => {
@@ -68,9 +67,6 @@ export const parseVCD = async (vcdContent: string): Promise<VCDData> => {
           const id = line.substring(1);
           const name = idMap[id];
           if (signals[name]) {
-            if (name === 'reset' && value === '0') {
-              resetDeassertion = currentTime;
-            }
             signals[name].wave.push([currentTime, value]);
           }
         } else if (line.startsWith("b")) {
@@ -87,12 +83,13 @@ export const parseVCD = async (vcdContent: string): Promise<VCDData> => {
       } else {
         const maxCycles = Math.ceil(maxTime / Math.pow(10, -timescale));
         
-        // Adjust SW signal timing and ensure correct order
-        if (signals['SW']) {
-          signals['SW'].wave = signals['SW'].wave
-            .filter(([time, _]) => time >= resetDeassertion)
-            .sort((a, b) => a[0] - b[0]);
-        }
+        // Ensure all signals have a value at time 0
+        Object.values(signals).forEach(signal => {
+          if (signal.wave.length === 0 || signal.wave[0][0] > 0) {
+            signal.wave.unshift([0, '0'.repeat(signal.width)]);
+          }
+          signal.wave.sort((a, b) => a[0] - b[0]);
+        });
         
         resolve({
           signals: Object.values(signals),

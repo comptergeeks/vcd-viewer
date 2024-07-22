@@ -389,7 +389,10 @@ const WaveformViewer: React.FC<WaveformViewerProps> = ({ data }) => {
             ctx.textAlign = "left";
             ctx.textBaseline = "middle";
             
-            let displayValue = value.padStart(signal.width, '0');
+            // Ensure correct display of SW signal
+            let displayValue = signal.name === 'SW' 
+              ? value.split('').reverse().join('')
+              : value;
             ctx.fillText(displayValue, x + 5, y);
           }
         }
