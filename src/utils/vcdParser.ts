@@ -32,6 +32,8 @@ export const parseVCD = async (vcdContent: string): Promise<VCDData> => {
     let timescale = 0;
     let maxTime = 0;
     let currentScope: string[] = [];
+    let resetDeassertion = 0;
+    let idMap: { [key: string]: string } = {}; // Map VCD IDs to signal names
 
     const processChunk = (start: number) => {
       const end = Math.min(start + 10000, lines.length);
@@ -40,8 +42,10 @@ export const parseVCD = async (vcdContent: string): Promise<VCDData> => {
         if (line.startsWith("$var")) {
           const parts = line.split(/\s+/);
           const id = parts[3];
-          signals[id] = {
-            name: parts[4],
+          const name = parts[4];
+          idMap[id] = name;
+          signals[name] = {
+            name: name,
             width: parseInt(parts[2]),
             wave: [],
             hierarchy: [...currentScope],
@@ -62,13 +66,19 @@ export const parseVCD = async (vcdContent: string): Promise<VCDData> => {
         } else if (line.match(/^[01zx]\S+/i)) {
           const value = line[0];
           const id = line.substring(1);
-          if (signals[id]) {
-            signals[id].wave.push([currentTime, value]);
+          const name = idMap[id];
+          if (signals[name]) {
+            if (name === 'reset' && value === '0') {
+              resetDeassertion = currentTime;
+            }
+            signals[name].wave.push([currentTime, value]);
           }
         } else if (line.startsWith("b")) {
           const [value, id] = line.substring(1).split(/\s+/);
-          if (signals[id]) {
-            signals[id].wave.push([currentTime, value]);
+          const name = idMap[id];
+          if (signals[name]) {
+            const paddedValue = value.padStart(signals[name].width, '0');
+            signals[name].wave.push([currentTime, paddedValue]);
           }
         }
       }
@@ -76,6 +86,14 @@ export const parseVCD = async (vcdContent: string): Promise<VCDData> => {
         setTimeout(() => processChunk(end), 0);
       } else {
         const maxCycles = Math.ceil(maxTime / Math.pow(10, -timescale));
+        
+        // Adjust SW signal timing and ensure correct order
+        if (signals['SW']) {
+          signals['SW'].wave = signals['SW'].wave
+            .filter(([time, _]) => time >= resetDeassertion)
+            .sort((a, b) => a[0] - b[0]);
+        }
+        
         resolve({
           signals: Object.values(signals),
           timescale: Math.pow(10, -timescale),
